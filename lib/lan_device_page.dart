@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_lan_demo/app_state.dart';
 import 'package:flutter_lan_demo/constants.dart';
 import 'package:flutter_lan_demo/models/device.dart';
+import 'package:flutter_lan_demo/models/message.dart';
 
 class LanDevicePage extends StatefulWidget {
   const LanDevicePage({super.key});
@@ -104,20 +105,20 @@ class _LanDevicePageState extends State<LanDevicePage> {
 
       /// 解析消息, 如果消息是心跳包, 则更新设备在线状态
       try {
-        final messageMap = jsonDecode(message);
-        if (messageMap is! Map) return;
-        if (messageMap['type'] != 'heartbeat') return;
+        final decoded = jsonDecode(message);
+        if (decoded is! Map<String, dynamic>) return;
 
-        final deviceId = (messageMap['deviceId'] ?? '').toString();
-        if (deviceId.isEmpty) return;
+        final msg = Message.fromJson(decoded);
+        if (msg.messageType != MessageType.heartbeat) return;
 
-        final hostName = (messageMap['name'] ?? '').toString();
-        final existing = _devices[deviceId];
+        if (msg.senderDeviceId.isEmpty) return;
+
+        final existing = _devices[msg.senderDeviceId];
 
         if (existing == null) {
-          _devices[deviceId] = Device(
-            hostName: hostName,
-            deviceId: deviceId,
+          _devices[msg.senderDeviceId] = Device(
+            hostName: msg.sender,
+            deviceId: msg.senderDeviceId,
             isOnline: true,
             lastSeen: now,
           );
@@ -166,16 +167,19 @@ class _LanDevicePageState extends State<LanDevicePage> {
     final socket = _udpSocket;
     if (socket == null) return;
 
-    final heartbeat = {
-      'type': 'heartbeat',
-      'name': AppState.instance.myDevice?.hostName,
-      'deviceId': AppState.instance.myDevice?.deviceId,
-      'dataPort': dataPort,
-    };
+    final myDevice = AppState.instance.myDevice;
+    if (myDevice == null) return;
+    if (myDevice.deviceId.isEmpty) return;
 
-    final payload = utf8.encode(jsonEncode(heartbeat));
+    final msg = Message(
+      messageType: MessageType.heartbeat,
+      sender: myDevice.hostName,
+      senderDeviceId: myDevice.deviceId,
+    );
 
-    debugPrint('sendHeartbeatUdp: $heartbeat');
+    final payload = utf8.encode(jsonEncode(msg.toJson()));
+
+    debugPrint('sendHeartbeatUdp: $msg');
 
     final broadcast = InternetAddress(broadcastAddress);
     socket.send(payload, broadcast, heartbeatPort);
