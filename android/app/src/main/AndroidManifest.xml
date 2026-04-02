@@ -1,4 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- LAN: UDP/TCP sockets (required in release; debug/profile also merge this). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Optional: detect connectivity before discovery/heartbeat. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Wi‑Fi multicast/broadcast on some devices; use with MulticastLock if needed. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
     <application
         android:label="flutter_lan_demo"
         android:name="${applicationName}"
