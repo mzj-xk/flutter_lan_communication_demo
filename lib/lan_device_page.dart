@@ -17,6 +17,7 @@ class LanDevicePage extends StatefulWidget {
 class _LanDevicePageState extends State<LanDevicePage> {
   RawDatagramSocket? _udpSocket;
   Timer? _heartbeatTimer;
+  Timer? _offlineCheckTimer;
   final Map<String, Device> _devices = {};
   @override
   void initState() {
@@ -26,6 +27,7 @@ class _LanDevicePageState extends State<LanDevicePage> {
       await openUdpForHeartbeat();
       startHeartbeat();
       discoverHeartbeatDevices();
+      startOfflineCheck();
     });
   }
 
@@ -33,6 +35,7 @@ class _LanDevicePageState extends State<LanDevicePage> {
   void dispose() {
     _udpSocket?.close();
     _heartbeatTimer?.cancel();
+    _offlineCheckTimer?.cancel();
     super.dispose();
   }
 
@@ -95,21 +98,59 @@ class _LanDevicePageState extends State<LanDevicePage> {
       final datagram = socket.receive();
       if (datagram == null) return;
 
+      final now = DateTime.now();
       final message = utf8.decode(datagram.data);
       debugPrint('discoverHeartbeatDevices: $message from ${datagram.address}');
 
-      /// 解析消息, 如果消息是心跳包, 则添加到设备列表
-      final messageMap = jsonDecode(message);
-      if (messageMap['type'] == 'heartbeat') {
-        final device = Device(
-          hostName: messageMap['name'] ?? '',
-          deviceId: messageMap['deviceId'] ?? '',
-        );
-        if (!_devices.containsKey(device.deviceId)) {
-          _devices[device.deviceId] = device;
+      /// 解析消息, 如果消息是心跳包, 则更新设备在线状态
+      try {
+        final messageMap = jsonDecode(message);
+        if (messageMap is! Map) return;
+        if (messageMap['type'] != 'heartbeat') return;
+
+        final deviceId = (messageMap['deviceId'] ?? '').toString();
+        if (deviceId.isEmpty) return;
+
+        final hostName = (messageMap['name'] ?? '').toString();
+        final existing = _devices[deviceId];
+
+        if (existing == null) {
+          _devices[deviceId] = Device(
+            hostName: hostName,
+            deviceId: deviceId,
+            isOnline: true,
+            lastSeen: now,
+          );
+        } else {
+          existing.isOnline = true;
+          existing.lastSeen = now;
         }
+
+        if (!mounted) return;
         setState(() {});
+      } catch (_) {
+        // 非 JSON 或字段异常的包直接忽略，避免 listen 回调中断
       }
+    });
+  }
+
+  // 离线检测：超过一定时间未收到心跳则标记为离线
+  void startOfflineCheck() {
+    final offlineTimeout = heartbeatInterval * 3;
+    _offlineCheckTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final now = DateTime.now();
+
+      var changed = false;
+      _devices.forEach((_, device) {
+        final diff = now.difference(device.lastSeen);
+        if (device.isOnline && diff > offlineTimeout) {
+          device.isOnline = false;
+          changed = true;
+        }
+      });
+
+      if (changed) setState(() {});
     });
   }
 
