@@ -51,7 +51,23 @@ class _LanDevicePageState extends State<LanDevicePage> {
               itemCount: list.length,
               itemBuilder: (context, index) {
                 final device = list[index];
-                return ListTile(title: Text(device.hostName));
+                return Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Row(
+                    children: [
+                      Text(device.hostName, style: TextStyle(fontSize: 20)),
+                      Spacer(),
+                      Container(
+                        width: 15,
+                        height: 15,
+                        decoration: BoxDecoration(
+                          color: device.isOnline ? Colors.green : Colors.grey,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
               },
             ),
           ),

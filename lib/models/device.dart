@@ -1,5 +1,10 @@
 class Device {
   final String hostName;
   final String deviceId;
-  Device({required this.hostName, required this.deviceId});
+  bool isOnline;
+  Device({
+    required this.hostName,
+    required this.deviceId,
+    this.isOnline = true,
+  });
 }
