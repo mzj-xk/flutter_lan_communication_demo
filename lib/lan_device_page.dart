@@ -64,6 +64,7 @@ class _LanDevicePageState extends State<LanDevicePage> {
     _udpSocket = await RawDatagramSocket.bind(
       InternetAddress.anyIPv4,
       heartbeatPort,
+      reusePort: true,
     );
     _udpSocket!.broadcastEnabled = true;
   }
