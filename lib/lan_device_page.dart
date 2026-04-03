@@ -25,6 +25,9 @@ class _LanDevicePageState extends State<LanDevicePage> {
 
   final List<Message> _messages = [];
 
+  // 当前私聊对象
+  String? _currentPrivateReceiverId;
+
   String _currentLeaderId =
       AppState.instance.myDevice?.deviceId ?? ''; // 默认自己是leader
 
@@ -103,26 +106,37 @@ class _LanDevicePageState extends State<LanDevicePage> {
                   final device = list[index];
                   return Padding(
                     padding: EdgeInsets.symmetric(horizontal: 10),
-                    child: Row(
-                      children: [
-                        Text(device.hostName, style: TextStyle(fontSize: 20)),
-                        SizedBox(width: 10),
-                        Text(
-                          device.deviceId == _currentLeaderId
-                              ? 'leader'
-                              : 'client',
-                          style: TextStyle(fontSize: 20),
-                        ),
-                        Spacer(),
-                        Container(
-                          width: 15,
-                          height: 15,
-                          decoration: BoxDecoration(
-                            color: device.isOnline ? Colors.green : Colors.grey,
-                            shape: BoxShape.circle,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        selectPrivateReceiver(device.deviceId);
+                      },
+                      child: Row(
+                        children: [
+                          Text(device.hostName, style: TextStyle(fontSize: 20)),
+                          SizedBox(width: 10),
+                          Text(
+                            device.deviceId == _currentLeaderId
+                                ? 'leader'
+                                : 'client',
+                            style: TextStyle(fontSize: 20),
                           ),
-                        ),
-                      ],
+                          Spacer(),
+                          if (_currentPrivateReceiverId == device.deviceId)
+                            Icon(Icons.chat),
+                          SizedBox(width: 10),
+                          Container(
+                            width: 15,
+                            height: 15,
+                            decoration: BoxDecoration(
+                              color: device.isOnline
+                                  ? Colors.green
+                                  : Colors.grey,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -138,6 +152,8 @@ class _LanDevicePageState extends State<LanDevicePage> {
                     children: [
                       if (message.messageType == MessageType.broadcast)
                         Text('广播消息'),
+                      if (message.messageType == MessageType.private)
+                        Text('私聊消息'),
                       SizedBox(width: 10),
                       Text('sender: ${message.sender}'),
                       SizedBox(width: 10),
@@ -158,10 +174,19 @@ class _LanDevicePageState extends State<LanDevicePage> {
                 ),
                 ElevatedButton(
                   onPressed: () {
-                    sendBroadcastTcp(_textController.text);
+                    if (_currentPrivateReceiverId == null) {
+                      sendBroadcastTcp(_textController.text);
+                    } else {
+                      sendPrivateTcp(
+                        _currentPrivateReceiverId!,
+                        _textController.text,
+                      );
+                    }
                     _textController.clear();
                   },
-                  child: Text('发送广播消息'),
+                  child: Text(
+                    '发送${_currentPrivateReceiverId == null ? '广播' : '私聊'}消息',
+                  ),
                 ),
                 // ElevatedButton(onPressed: () {}, child: Text('发送私密消息')),
               ],
@@ -227,6 +252,20 @@ class _LanDevicePageState extends State<LanDevicePage> {
         // 非 JSON 或字段异常的包直接忽略，避免 listen 回调中断
       }
     });
+  }
+
+  // 选择私聊对象
+  void selectPrivateReceiver(String deviceId) {
+    // 如果私聊对象为自己
+    if (deviceId == AppState.instance.myDevice?.deviceId) {
+      return;
+    }
+    if (deviceId == _currentPrivateReceiverId) {
+      _currentPrivateReceiverId = null;
+    } else {
+      _currentPrivateReceiverId = deviceId;
+    }
+    setState(() {});
   }
 
   // 离线检测：超过一定时间未收到心跳则标记为离线
@@ -390,7 +429,6 @@ class _LanDevicePageState extends State<LanDevicePage> {
                     final msg = Message.fromJson(decoded);
                     if (msg.messageType == MessageType.broadcast) {
                       debugPrint('TCP broadcast received: ${msg.content}');
-                      addMessage(msg);
                       // 如果广播内容是“我自己发的”，leader 理论上不会转发给我
                       // 这里做兜底，避免重复显示
                       if (msg.senderDeviceId == myDevice.deviceId) return;
@@ -510,7 +548,6 @@ class _LanDevicePageState extends State<LanDevicePage> {
               }
 
               if (msg.messageType == MessageType.broadcast) {
-                addMessage(msg);
                 // leader 广播：逐个发给已连接的非自己设备（遍历快照避免并发修改）
                 final snapshot = _leaderClientSockets.entries.toList();
                 for (final entry in snapshot) {
@@ -583,7 +620,6 @@ class _LanDevicePageState extends State<LanDevicePage> {
 
     // 如果本机不是 leader，则将消息转发给 leader
     _leaderSocket!.write('${jsonEncode(msg.toJson())}\n');
-    addMessage(msg);
   }
 
   /// 发送私密消息：leader 直接转发；非 leader 发给 leader
