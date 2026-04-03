@@ -390,6 +390,7 @@ class _LanDevicePageState extends State<LanDevicePage> {
                     final msg = Message.fromJson(decoded);
                     if (msg.messageType == MessageType.broadcast) {
                       debugPrint('TCP broadcast received: ${msg.content}');
+                      addMessage(msg);
                       // 如果广播内容是“我自己发的”，leader 理论上不会转发给我
                       // 这里做兜底，避免重复显示
                       if (msg.senderDeviceId == myDevice.deviceId) return;
@@ -509,6 +510,7 @@ class _LanDevicePageState extends State<LanDevicePage> {
               }
 
               if (msg.messageType == MessageType.broadcast) {
+                addMessage(msg);
                 // leader 广播：逐个发给已连接的非自己设备（遍历快照避免并发修改）
                 final snapshot = _leaderClientSockets.entries.toList();
                 for (final entry in snapshot) {
@@ -560,8 +562,9 @@ class _LanDevicePageState extends State<LanDevicePage> {
       content: content,
     );
 
+    // 如果本机是 leader，则直接转发给所有客户端
     if (_isLeader) {
-      // leader 广播：逐个发给已连接的非自己设备（遍历快照避免并发修改）
+      // 遍历所有客户端，除了自己
       final snapshot = _leaderClientSockets.entries.toList();
       for (final entry in snapshot) {
         final deviceId = entry.key;
@@ -572,11 +575,15 @@ class _LanDevicePageState extends State<LanDevicePage> {
       return;
     }
 
+    // 如果本机不是 leader，则将消息添加到待发送队列
     if (_leaderSocket == null) {
       if (_pendingToLeader.length < 100) _pendingToLeader.addLast(msg);
       return;
     }
+
+    // 如果本机不是 leader，则将消息转发给 leader
     _leaderSocket!.write('${jsonEncode(msg.toJson())}\n');
+    addMessage(msg);
   }
 
   /// 发送私密消息：leader 直接转发；非 leader 发给 leader
@@ -604,5 +611,10 @@ class _LanDevicePageState extends State<LanDevicePage> {
       return;
     }
     _leaderSocket!.write('${jsonEncode(msg.toJson())}\n');
+  }
+
+  void addMessage(Message msg) {
+    _messages.add(msg);
+    setState(() {});
   }
 }
