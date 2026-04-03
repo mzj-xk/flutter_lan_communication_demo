@@ -432,8 +432,9 @@ class _LanDevicePageState extends State<LanDevicePage> {
                       // 如果广播内容是“我自己发的”，leader 理论上不会转发给我
                       // 这里做兜底，避免重复显示
                       if (msg.senderDeviceId == myDevice.deviceId) return;
+                      addMessage(msg);
                     } else if (msg.messageType == MessageType.private) {
-                      // debugPrint('TCP private received: ${msg.content}');
+                      addMessage(msg);
                     }
                   } catch (_) {
                     // 忽略非 JSON 包
@@ -548,6 +549,7 @@ class _LanDevicePageState extends State<LanDevicePage> {
               }
 
               if (msg.messageType == MessageType.broadcast) {
+                addMessage(msg); // leader 自己也显示广播消息
                 // leader 广播：逐个发给已连接的非自己设备（遍历快照避免并发修改）
                 final snapshot = _leaderClientSockets.entries.toList();
                 for (final entry in snapshot) {
@@ -562,6 +564,12 @@ class _LanDevicePageState extends State<LanDevicePage> {
               if (msg.messageType == MessageType.private) {
                 final targetId = msg.receiverDeviceId;
                 if (targetId == null || targetId.isEmpty) return;
+
+                // 私聊目标是 leader 自己，直接显示
+                if (targetId == AppState.instance.myDevice?.deviceId) {
+                  addMessage(msg);
+                  return;
+                }
 
                 final targetSocket = _leaderClientSockets[targetId];
                 if (targetSocket == null) return;
@@ -609,17 +617,20 @@ class _LanDevicePageState extends State<LanDevicePage> {
         if (deviceId == myDevice.deviceId) continue;
         s.write('${jsonEncode(msg.toJson())}\n');
       }
+      addMessage(msg); // 发送者自己也显示
       return;
     }
 
     // 如果本机不是 leader，则将消息添加到待发送队列
     if (_leaderSocket == null) {
       if (_pendingToLeader.length < 100) _pendingToLeader.addLast(msg);
+      addMessage(msg); // 发送者自己也显示
       return;
     }
 
     // 如果本机不是 leader，则将消息转发给 leader
     _leaderSocket!.write('${jsonEncode(msg.toJson())}\n');
+    addMessage(msg); // 发送者自己也显示
   }
 
   /// 发送私密消息：leader 直接转发；非 leader 发给 leader
@@ -639,14 +650,17 @@ class _LanDevicePageState extends State<LanDevicePage> {
     if (_isLeader) {
       final targetSocket = _leaderClientSockets[receiverDeviceId];
       targetSocket?.write('${jsonEncode(msg.toJson())}\n');
+      addMessage(msg); // 发送者自己也显示
       return;
     }
 
     if (_leaderSocket == null) {
       if (_pendingToLeader.length < 100) _pendingToLeader.addLast(msg);
+      addMessage(msg); // 发送者自己也显示
       return;
     }
     _leaderSocket!.write('${jsonEncode(msg.toJson())}\n');
+    addMessage(msg); // 发送者自己也显示
   }
 
   void addMessage(Message msg) {
